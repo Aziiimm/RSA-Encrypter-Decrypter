@@ -5,14 +5,14 @@ interface KeyGeneratorProps {
   onKeysGenerated: (keys: RSAKeyPair) => void;
 }
 
-type KeySize = 8 | 2048;
+type KeySize = 32 | 2048;
 
 export default function KeyGenerator({ onKeysGenerated }: KeyGeneratorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [publicKeyPEM, setPublicKeyPEM] = useState<string>("");
   const [privateKeyPEM, setPrivateKeyPEM] = useState<string>("");
   const [keys, setKeys] = useState<RSAKeyPair | null>(null);
-  const [keySize, setKeySize] = useState<KeySize>(2048);
+  const [keySize, setKeySize] = useState<KeySize>(32);
 
   const handleGenerate = async () => {
     setIsGenerating(true);
@@ -52,8 +52,8 @@ export default function KeyGenerator({ onKeysGenerated }: KeyGeneratorProps) {
 
   const getKeySizeLabel = (size: KeySize): string => {
     switch (size) {
-      case 8:
-        return "8-bit (Teaching: n=6)";
+      case 32:
+        return "32-bit (Teaching: n=221)";
       case 2048:
         return "2048-bit (Secure)";
       default:
@@ -74,16 +74,18 @@ export default function KeyGenerator({ onKeysGenerated }: KeyGeneratorProps) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setKeySize(8)}
+            onClick={() => setKeySize(32)}
             disabled={isGenerating}
             className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all duration-200 cursor-pointer ${
-              keySize === 8
+              keySize === 32
                 ? "bg-blue-600 text-white shadow-md"
                 : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            8-bit
-            <span className="block text-xs mt-0.5 opacity-90">Ex. (n=6)</span>
+            32-bit
+            <span className="block text-xs mt-0.5 opacity-90">
+              Teaching (n=221)
+            </span>
           </button>
           <button
             type="button"
@@ -100,7 +102,7 @@ export default function KeyGenerator({ onKeysGenerated }: KeyGeneratorProps) {
           </button>
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          {keySize === 8
+          {keySize === 32
             ? "⚠️ Keys are very small and NOT secure. For demonstration only."
             : "✓ Secure key size recommended for actual use."}
         </p>
@@ -143,7 +145,7 @@ export default function KeyGenerator({ onKeysGenerated }: KeyGeneratorProps) {
       {publicKeyPEM && keys && (
         <div className="mt-6 space-y-4">
           {/* Show key values for teaching mode - only if keys are actually small */}
-          {keys.publicKey.n < 100n && (
+          {keys.publicKey.n < 256n && (
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div>
@@ -184,7 +186,7 @@ export default function KeyGenerator({ onKeysGenerated }: KeyGeneratorProps) {
               readOnly
               value={publicKeyPEM}
               className="w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg font-mono text-xs text-gray-800 dark:text-gray-200 resize-none"
-              rows={keySize === 8 ? 4 : 6}
+              rows={keySize === 32 ? 4 : 6}
             />
           </div>
 
@@ -204,7 +206,7 @@ export default function KeyGenerator({ onKeysGenerated }: KeyGeneratorProps) {
               readOnly
               value={privateKeyPEM}
               className="w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg font-mono text-xs text-gray-800 dark:text-gray-200 resize-none"
-              rows={keySize === 8 ? 4 : 6}
+              rows={keySize === 32 ? 4 : 6}
             />
             <p className="text-xs text-red-600 dark:text-red-400 mt-1">
               ⚠️ Keep your private key secure and never share it!

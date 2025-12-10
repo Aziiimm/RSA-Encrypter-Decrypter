@@ -130,11 +130,11 @@ function modInverse(a: bigint, m: bigint): bigint {
 export function generateKeyPair(keySize: number = 2048): RSAKeyPair {
   let p: bigint, q: bigint;
 
-  if (keySize === 8) {
-    // Teaching mode: use very small primes for visualization
-    // p=2, q=3 gives n=6 (single digit)
-    p = 2n;
-    q = 3n;
+  if (keySize === 32) {
+    // Teaching mode: use small primes for visualization
+    // p=13, q=17 gives n=221 (readable, can encrypt ASCII 0-220, covers most text)
+    p = 13n;
+    q = 17n;
   } else {
     // Production mode: generate large primes
     // For keySize bits, each prime should be keySize/2 bits
@@ -150,7 +150,7 @@ export function generateKeyPair(keySize: number = 2048): RSAKeyPair {
   // For small keys, use smaller e (3 or 5)
   // For large keys, use 65537
   let e: bigint;
-  if (keySize === 8) {
+  if (keySize === 32) {
     // For small keys, try e=3 first, then 5, then 7
     e = 3n;
     while (e < phi && phi % e === 0n) {
@@ -174,8 +174,8 @@ export function generateKeyPair(keySize: number = 2048): RSAKeyPair {
 
 // Get maximum message size for a given key
 function getMaxMessageSize(n: bigint): number {
-  // For very small keys (teaching mode), no padding is used
-  if (n < 100n) {
+  // For small teaching keys, no padding is used
+  if (n < 256n) {
     // Can only encrypt values less than n
     // For single characters (0-127), we need n > 127
     // For n=6, we can only encrypt values 0-5 (very limited)
@@ -194,8 +194,8 @@ function getMaxMessageSize(n: bigint): number {
 
 // Simple PKCS#1 v1.5 style padding (for educational purposes)
 function padMessage(message: bigint, keySizeBytes: number, n: bigint): bigint {
-  // For very small keys (teaching mode), use simple padding or no padding
-  if (n < 100n) {
+  // For small teaching keys, use simple padding or no padding
+  if (n < 256n) {
     // For n < 100, just ensure message < n
     if (message >= n) {
       throw new Error("Message too large for key size");
@@ -239,8 +239,8 @@ function padMessage(message: bigint, keySizeBytes: number, n: bigint): bigint {
 
 // Remove padding
 function unpadMessage(padded: bigint, keySizeBytes: number, n: bigint): bigint {
-  // For very small keys (teaching mode), no padding was applied
-  if (n < 100n) {
+  // For small teaching keys, no padding was applied
+  if (n < 256n) {
     return padded;
   }
 
@@ -278,6 +278,37 @@ export function encrypt(
 ): string {
   if (!message) {
     throw new Error("Message cannot be empty");
+  }
+
+  // For small teaching keys (n < 256), encrypt character by character
+  // Each character must have ASCII value < n
+  if (publicKey.n < 256n) {
+    const chunks: string[] = [];
+    const keySizeBytes = Math.ceil(publicKey.n.toString(2).length / 8);
+
+    for (let i = 0; i < message.length; i++) {
+      const charCode = message.charCodeAt(i);
+      if (charCode >= Number(publicKey.n)) {
+        throw new Error(
+          `Character '${message[i]}' (ASCII ${charCode}) cannot be encrypted with key size n=${publicKey.n}. ` +
+            `Only characters with ASCII values 0-${
+              Number(publicKey.n) - 1
+            } are supported. ` +
+            `Try using single digits (0-${
+              Number(publicKey.n) - 1
+            }) or single letters with low ASCII values.`
+        );
+      }
+
+      const charBigInt = BigInt(charCode);
+      const encrypted = modPow(charBigInt, publicKey.e, publicKey.n);
+
+      // Convert to base64
+      const encryptedBytes = bigIntToBytes(encrypted, keySizeBytes);
+      chunks.push(bytesToBase64(encryptedBytes));
+    }
+
+    return chunks.join(":");
   }
 
   const maxChunkSize = getMaxMessageSize(publicKey.n);
@@ -347,6 +378,73 @@ export function encryptWithProcess(
     message.substring(0, 50) + (message.length > 50 ? "..." : ""),
     `Message length: ${message.length} characters`
   );
+
+  // For small teaching keys (n < 256), encrypt character by character
+  if (publicKey.n < 256n) {
+    const chunks: string[] = [];
+    const keySizeBytes = Math.ceil(publicKey.n.toString(2).length / 8);
+
+    addStep(
+      "Character-by-Character Encryption",
+      `Encrypting each character separately (n=${publicKey.n}, max ASCII: ${
+        Number(publicKey.n) - 1
+      })`,
+      "active",
+      undefined,
+      "Each character must have ASCII value < n"
+    );
+
+    for (let i = 0; i < message.length; i++) {
+      const char = message[i];
+      const charCode = message.charCodeAt(i);
+
+      if (charCode >= Number(publicKey.n)) {
+        throw new Error(
+          `Character '${char}' (ASCII ${charCode}) cannot be encrypted with key size n=${publicKey.n}. ` +
+            `Only characters with ASCII values 0-${
+              Number(publicKey.n) - 1
+            } are supported. ` +
+            `Try using single digits (0-${
+              Number(publicKey.n) - 1
+            }) or single letters with low ASCII values.`
+        );
+      }
+
+      addStep(
+        `Encrypting Character ${i + 1}: '${char}'`,
+        `ASCII value: ${charCode}, Encrypting: ${charCode}^${publicKey.e.toString()} mod ${publicKey.n.toString()}`,
+        "active",
+        undefined,
+        `Character '${char}' (ASCII ${charCode})`
+      );
+
+      const charBigInt = BigInt(charCode);
+      const encrypted = modPow(charBigInt, publicKey.e, publicKey.n);
+
+      addStep(
+        `Encoding Character ${i + 1}`,
+        "Converting to Base64",
+        "active",
+        undefined,
+        `Encrypted value: ${encrypted.toString()}`
+      );
+
+      const encryptedBytes = bigIntToBytes(encrypted, keySizeBytes);
+      chunks.push(bytesToBase64(encryptedBytes));
+    }
+
+    const result = chunks.join(":");
+
+    addStep(
+      "Complete",
+      "Encryption finished successfully",
+      "completed",
+      result.substring(0, 100) + (result.length > 100 ? "..." : ""),
+      `Total ciphertext length: ${result.length} characters`
+    );
+
+    return result;
+  }
 
   const maxChunkSize = getMaxMessageSize(publicKey.n);
   const messageBytes = new TextEncoder().encode(message);
@@ -437,6 +535,35 @@ export function decrypt(
 
   // Calculate key size in bytes: must match encryption calculation
   const keySizeBytes = Math.ceil(privateKey.n.toString(2).length / 8);
+
+  // For very small keys (n < 100), decrypt character by character
+  if (privateKey.n < 256n) {
+    for (const chunk of chunks) {
+      // Decode from base64
+      let encryptedBytes = base64ToBytes(chunk);
+
+      // Ensure we have exactly keySizeBytes
+      if (encryptedBytes.length < keySizeBytes) {
+        const paddedBytes = new Uint8Array(keySizeBytes);
+        paddedBytes.set(encryptedBytes, keySizeBytes - encryptedBytes.length);
+        encryptedBytes = paddedBytes;
+      } else if (encryptedBytes.length > keySizeBytes) {
+        encryptedBytes = encryptedBytes.slice(-keySizeBytes);
+      }
+
+      const encrypted = bytesToBigInt(encryptedBytes);
+
+      // Decrypt (no unpadding for small keys)
+      const decrypted = modPow(encrypted, privateKey.d, privateKey.n);
+
+      // Convert back to character
+      const charCode = Number(decrypted);
+      decryptedChunks.push(String.fromCharCode(charCode));
+    }
+
+    return decryptedChunks.join("");
+  }
+
   for (const chunk of chunks) {
     // Decode from base64
     let encryptedBytes = base64ToBytes(chunk);
@@ -523,6 +650,75 @@ export function decryptWithProcess(
 
   const keySizeBytes = Math.ceil(privateKey.n.toString(2).length / 8);
   const decryptedChunks: string[] = [];
+
+  // For very small keys (n < 100), decrypt character by character
+  if (privateKey.n < 256n) {
+    addStep(
+      "Character-by-Character Decryption",
+      `Decrypting each character separately (n=${privateKey.n})`,
+      "active",
+      undefined,
+      "Each chunk represents one encrypted character"
+    );
+
+    for (let i = 0; i < chunks.length; i++) {
+      addStep(
+        `Decoding Character ${i + 1}`,
+        "Converting Base64 to bytes",
+        "active",
+        undefined,
+        "Base64 decoding"
+      );
+
+      // Decode from base64
+      let encryptedBytes = base64ToBytes(chunks[i]);
+
+      // Ensure we have exactly keySizeBytes
+      if (encryptedBytes.length < keySizeBytes) {
+        const paddedBytes = new Uint8Array(keySizeBytes);
+        paddedBytes.set(encryptedBytes, keySizeBytes - encryptedBytes.length);
+        encryptedBytes = paddedBytes;
+      } else if (encryptedBytes.length > keySizeBytes) {
+        encryptedBytes = encryptedBytes.slice(-keySizeBytes);
+      }
+
+      const encrypted = bytesToBigInt(encryptedBytes);
+
+      addStep(
+        `Decrypting Character ${i + 1}`,
+        `Performing: m = c^${privateKey.d.toString()} mod ${privateKey.n.toString()}`,
+        "active",
+        undefined,
+        `Decrypting encrypted value`
+      );
+
+      const decrypted = modPow(encrypted, privateKey.d, privateKey.n);
+
+      addStep(
+        `Converting Character ${i + 1}`,
+        "Converting decrypted value to character",
+        "active",
+        undefined,
+        `Decrypted value: ${decrypted.toString()} → ASCII ${Number(decrypted)}`
+      );
+
+      const charCode = Number(decrypted);
+      const char = String.fromCharCode(charCode);
+      decryptedChunks.push(char);
+    }
+
+    const result = decryptedChunks.join("");
+
+    addStep(
+      "Complete",
+      "Decryption finished successfully",
+      "completed",
+      result.substring(0, 50) + (result.length > 50 ? "..." : ""),
+      `Decrypted message: "${result}"`
+    );
+
+    return result;
+  }
 
   for (let i = 0; i < chunks.length; i++) {
     // Decode from base64

@@ -1,35 +1,138 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState } from "react";
+import "./App.css";
+import KeyGenerator from "./components/KeyGenerator";
+import InputSection from "./components/InputSection";
+import OutputSection from "./components/OutputSection";
+import ErrorDisplay from "./components/ErrorDisplay";
+import ProcessVisualization from "./components/ProcessVisualization";
+import {
+  encryptWithProcess,
+  decryptWithProcess,
+  type RSAKeyPair,
+  type ProcessStep,
+} from "./utils/rsa";
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [keys, setKeys] = useState<RSAKeyPair | null>(null);
+  const [mode, setMode] = useState<"encrypt" | "decrypt">("encrypt");
+  const [inputText, setInputText] = useState("");
+  const [outputText, setOutputText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processSteps, setProcessSteps] = useState<ProcessStep[]>([]);
+
+  const handleKeysGenerated = (newKeys: RSAKeyPair) => {
+    setKeys(newKeys);
+    setError(null);
+    setOutputText("");
+  };
+
+  const handleProcess = () => {
+    if (!keys || !inputText.trim()) {
+      return;
+    }
+
+    setError(null);
+    setIsProcessing(true);
+    setOutputText("");
+    setProcessSteps([]);
+
+    // Use setTimeout to allow UI to update
+    setTimeout(() => {
+      try {
+        if (mode === "encrypt") {
+          const ciphertext = encryptWithProcess(
+            inputText,
+            keys.publicKey,
+            (step) => {
+              setProcessSteps((prev) => {
+                const updated = [...prev];
+                // Mark previous steps as completed
+                updated.forEach((s) => {
+                  if (s.status === "active") s.status = "completed";
+                });
+                updated.push(step);
+                return updated;
+              });
+            }
+          );
+          setOutputText(ciphertext);
+        } else {
+          const plaintext = decryptWithProcess(
+            inputText,
+            keys.privateKey,
+            (step) => {
+              setProcessSteps((prev) => {
+                const updated = [...prev];
+                // Mark previous steps as completed
+                updated.forEach((s) => {
+                  if (s.status === "active") s.status = "completed";
+                });
+                updated.push(step);
+                return updated;
+              });
+            }
+          );
+          setOutputText(plaintext);
+        }
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : "An unknown error occurred";
+        setError(
+          `Failed to ${mode}: ${errorMessage}. Please check your input and try again.`
+        );
+        setOutputText("");
+        setProcessSteps([]);
+      } finally {
+        setIsProcessing(false);
+      }
+    }, 10);
+  };
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <header className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+            RSA Encryption & Decryption
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Custom 2048-bit RSA Encryption and Decryption
+          </p>
+        </header>
+
+        <div className="mb-6">
+          <KeyGenerator onKeysGenerated={handleKeysGenerated} />
+        </div>
+
+        <ErrorDisplay error={error} />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <InputSection
+              value={inputText}
+              onChange={setInputText}
+              mode={mode}
+              onModeChange={setMode}
+              onProcess={handleProcess}
+              isProcessing={isProcessing}
+              hasKeys={!!keys}
+            />
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <OutputSection value={outputText} mode={mode} />
+          </div>
+        </div>
+
+        <ProcessVisualization
+          mode={mode}
+          steps={processSteps}
+          isProcessing={isProcessing}
+        />
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    </div>
+  );
 }
 
-export default App
+export default App;

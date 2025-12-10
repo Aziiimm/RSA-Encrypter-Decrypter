@@ -126,17 +126,42 @@ function modInverse(a: bigint, m: bigint): bigint {
   return oldS < 0n ? oldS + m : oldS;
 }
 
-// Generate RSA key pair (2048-bit)
-export function generateKeyPair(): RSAKeyPair {
-  // Generate two 1024-bit primes
-  const p = generateLargePrime(1024);
-  const q = generateLargePrime(1024);
+// Generate RSA key pair with specified key size
+export function generateKeyPair(keySize: number = 2048): RSAKeyPair {
+  let p: bigint, q: bigint;
+
+  if (keySize === 8) {
+    // Teaching mode: use very small primes for visualization
+    // p=2, q=3 gives n=6 (single digit)
+    p = 2n;
+    q = 3n;
+  } else {
+    // Production mode: generate large primes
+    // For keySize bits, each prime should be keySize/2 bits
+    const primeBits = keySize / 2;
+    p = generateLargePrime(primeBits);
+    q = generateLargePrime(primeBits);
+  }
 
   const n = p * q;
   const phi = (p - 1n) * (q - 1n);
 
-  // Public exponent (commonly 65537)
-  const e = 65537n;
+  // Public exponent
+  // For small keys, use smaller e (3 or 5)
+  // For large keys, use 65537
+  let e: bigint;
+  if (keySize === 8) {
+    // For small keys, try e=3 first, then 5, then 7
+    e = 3n;
+    while (e < phi && phi % e === 0n) {
+      e = e + 2n;
+    }
+    if (e >= phi) {
+      e = 3n; // Fallback
+    }
+  } else {
+    e = 65537n;
+  }
 
   // Private exponent
   const d = modInverse(e, phi);
@@ -149,6 +174,16 @@ export function generateKeyPair(): RSAKeyPair {
 
 // Get maximum message size for a given key
 function getMaxMessageSize(n: bigint): number {
+  // For very small keys (teaching mode), no padding is used
+  if (n < 100n) {
+    // Can only encrypt values less than n
+    // For single characters (0-127), we need n > 127
+    // For n=6, we can only encrypt values 0-5 (very limited)
+    // For n=15, we can encrypt values 0-14
+    // For n=35, we can encrypt values 0-34
+    return 1; // Always 1 byte for teaching mode
+  }
+
   // Key size in bytes
   const keySizeBytes = Math.ceil(n.toString(2).length / 8);
   // Leave room for padding: 0x00 0x02 [at least 8 random bytes] 0x00 [message]
@@ -158,7 +193,17 @@ function getMaxMessageSize(n: bigint): number {
 }
 
 // Simple PKCS#1 v1.5 style padding (for educational purposes)
-function padMessage(message: bigint, keySizeBytes: number): bigint {
+function padMessage(message: bigint, keySizeBytes: number, n: bigint): bigint {
+  // For very small keys (teaching mode), use simple padding or no padding
+  if (n < 100n) {
+    // For n < 100, just ensure message < n
+    if (message >= n) {
+      throw new Error("Message too large for key size");
+    }
+    // Return message as-is for very small keys (no padding for simplicity)
+    return message;
+  }
+
   // Format: 0x00 0x02 [random non-zero bytes] 0x00 [message]
   const messageBytes = bigIntToBytes(
     message,
@@ -193,7 +238,12 @@ function padMessage(message: bigint, keySizeBytes: number): bigint {
 }
 
 // Remove padding
-function unpadMessage(padded: bigint, keySizeBytes: number): bigint {
+function unpadMessage(padded: bigint, keySizeBytes: number, n: bigint): bigint {
+  // For very small keys (teaching mode), no padding was applied
+  if (n < 100n) {
+    return padded;
+  }
+
   const bytes = bigIntToBytes(padded, keySizeBytes);
 
   // Check format: must start with 0x00 0x02
@@ -242,7 +292,7 @@ export function encrypt(
     const chunkBigInt = bytesToBigInt(chunk);
 
     // Pad and encrypt
-    const padded = padMessage(chunkBigInt, keySizeBytes);
+    const padded = padMessage(chunkBigInt, keySizeBytes, publicKey.n);
     if (padded >= publicKey.n) {
       throw new Error("Padded message exceeds key modulus");
     }
@@ -333,7 +383,7 @@ export function encryptWithProcess(
       `Chunk size: ${chunk.length} bytes → ${keySizeBytes} bytes after padding`
     );
 
-    const padded = padMessage(chunkBigInt, keySizeBytes);
+    const padded = padMessage(chunkBigInt, keySizeBytes, publicKey.n);
     if (padded >= publicKey.n) {
       throw new Error("Padded message exceeds key modulus");
     }
@@ -405,7 +455,7 @@ export function decrypt(
 
     // Decrypt
     const padded = modPow(encrypted, privateKey.d, privateKey.n);
-    const messageBigInt = unpadMessage(padded, keySizeBytes);
+    const messageBigInt = unpadMessage(padded, keySizeBytes, privateKey.n);
 
     // Convert back to bytes then string
     const messageBytes = bigIntToBytes(
@@ -515,7 +565,7 @@ export function decryptWithProcess(
       "Extracting original message from padded data"
     );
 
-    const messageBigInt = unpadMessage(padded, keySizeBytes);
+    const messageBigInt = unpadMessage(padded, keySizeBytes, privateKey.n);
 
     addStep(
       `Decoding Chunk ${i + 1}`,

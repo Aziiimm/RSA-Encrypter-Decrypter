@@ -83,9 +83,7 @@ export default function KeyGenerator({ onKeysGenerated }: KeyGeneratorProps) {
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             8-bit
-            <span className="block text-xs mt-0.5 opacity-90">
-              Teaching (n=6)
-            </span>
+            <span className="block text-xs mt-0.5 opacity-90">Ex. (n=6)</span>
           </button>
           <button
             type="button"
